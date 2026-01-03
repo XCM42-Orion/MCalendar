@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import QApplication,  QGridLayout, QLineEdit,QDateEdit,QComboBox
-from PyQt5.QtGui import QIcon, QFont,QColor
-from PyQt5.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QCalendarWidget
+from PyQt5.QtGui import QIcon, QFont,QColor,QPixmap
+from PyQt5.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QCalendarWidget,QGraphicsOpacityEffect,QDialog
 from PyQt5.QtCore import Qt, QDate
 import lunarcalendar
 import datetime
 import json
 from functools import partial
+import random
 
 # 基于lunarcalendar的农历转换的农历转中文函数
 def lunar_chinese(date):
@@ -85,7 +86,7 @@ def is_today_routine(date:QDate,routine_date:QDate,rouexlist,rule:str,days:int,t
                 if lunar_routine.month == lunar_current.month and lunar_routine.day == lunar_current.day and ((lunar_current.year - lunar_routine.year) < times or times == 0):
                     istodayroutine = True
             elif rule == '每...天':
-                if routine_date.daysTo(date) % days == 0 and routine_date.daysTo(date) < times * days:
+                if routine_date.daysTo(date) % days == 0 and (routine_date.daysTo(date) < times * days or times == 0):
                     istodayroutine = True
         else:
             show_error_window("加载日程时出错：可能存在日程间隔日期为零或为负。\n这可能导致未知的错误，建议检查routine.json并重启程序。")
@@ -452,7 +453,7 @@ class SearchWindow(QWidget):
         self.window_edit.setWindowIcon(QIcon("icon.png"))
         self.window_edit.show()
     
-    def delete_today(self,rid,time): #删除当日日程
+    def delete_today(self,rid,time): #删除当日日程。实现逻辑是：1.如果日程不重复，直接删除该日程。2.如果日程重复，在例外列表中添加当天日期。
             n = 0
             with open(f"routine.json","r",encoding="utf-8") as f:
                 jsonload = json.load(f)
@@ -500,6 +501,7 @@ class SearchWindow(QWidget):
         else:
             lineedit.setVisible(True)
 
+    # 将更改保存到当天，实现逻辑是：1.在日程文件中新建一个不重复的日程，名称和描述为修改后的内容，时间为当天日期。2.在原日程中添加当天日期到例外列表。
     def save_today(self,rid,time,name,desc):
         with open(f"routine.json","r",encoding="utf-8") as f:
             jsonload = json.load(f)
@@ -523,6 +525,7 @@ class SearchWindow(QWidget):
                     json.dump(jsonload,f,ensure_ascii=False,indent=2)
                 self.delete_today(rid,time)
     
+    # 将更改保存到全局，实现逻辑是：1.在日程文件中新建一个与原日程重复规则相同的日程，名称和描述为修改后的内容。2.删除原日程。
     def save_all(self,rid,time,name,desc):
         with open(f"routine.json","r",encoding="utf-8") as f:
             jsonload = json.load(f)
@@ -558,6 +561,7 @@ class SearchWindow(QWidget):
                     json.dump(jsonload,f,ensure_ascii=False,indent=2)
                 self.delete_all(rid,time)
 
+    # 删除未来日程，实现逻辑是：1.计算从日程开始日期到所选日期之间有多少次日程发生。2.新建一个从日程开始日期开始，重复次数为计算结果的新日程。3.删除原日程中从所选日期开始的所有日程。
     def delete_future(self,rid,time):
         with open(f"routine.json","r",encoding="utf-8") as f:
             jsonload = json.load(f)
@@ -604,7 +608,7 @@ class SearchWindow(QWidget):
             
 # 画日历。
 
-class CustomCalendarWidget(QWidget):
+class MCalendarWidget(QWidget):
     def __init__(self):
         super().__init__()
 
@@ -663,9 +667,8 @@ class lunarCalendar(QCalendarWidget):
     def __init__(self):
         super().__init__()
     def paintCell(self, painter, rect, date):
-        super().paintCell(painter, rect, date)
         painter.save()
-        painter.setBrush(QColor("#E7F6FB"))  # 非选中背景色
+        painter.setBrush(QColor(231, 246, 251, 160))  # 非选中背景色
         painter.setPen(Qt.NoPen)
         painter.drawRect(rect)
         painter.restore()
@@ -719,12 +722,79 @@ class lunarCalendar(QCalendarWidget):
         except:
             pass
 
+#欢迎弹窗
+class WelcomeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("欢迎来到 MCalendar！")
+        self.setFixedSize(600, 300)
+        self.setWindowIcon(QIcon("icon.png"))
+
+        #左边：Meko
+        self.girl_label = QLabel()
+        pixmap = QPixmap("Meko.png")
+        self.girl_label.setPixmap(pixmap)
+        self.girl_label.setScaledContents(True)
+        self.girl_label.setFixedSize(280, 280)
+
+        #右边：文字
+        self.title_label = QLabel("欢迎来到 MCalendar！")
+        self.title_label.setFont(QFont("Arial", 18))
+        self.title_label.setAlignment(Qt.AlignLeft)
+
+        self.text_label = QLabel()
+        self.text_label.setFont(QFont("微软雅黑", 11))
+        self.text_label.setWordWrap(True)
+
+        self.start_button = QPushButton("开始使用")
+        self.start_button.clicked.connect(self.accept)
+
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.title_label)
+        right_layout.addSpacing(10)
+        right_layout.addWidget(self.text_label)
+        right_layout.addStretch()
+        right_layout.addWidget(self.start_button, alignment=Qt.AlignRight)
+
+        #总布局
+        main_layout = QHBoxLayout(self)
+        main_layout.addWidget(self.girl_label)
+        main_layout.addLayout(right_layout)
+
+        #设置文本
+        self.update_today_text()
+
+    def update_today_text(self):
+        today = QDate.currentDate()
+        routines_today = []
+        nonetext = ["你今天没有日程哦 ✨\n好好享受这一天吧～","今天是自由的一天 ✨","今天没有安排，放松一下吧～","今天没有日程，Meko祝你有愉快的一天！",]
+        havetextend = ["今天有好多日程呢！\n加油完成它们吧！","加油哦！","今天的任务可不少呢！\n一起加油吧！","今天有很多事情要做呢！\nMeko相信你能做到！",]
+        try:
+            with open("routine.json", "r", encoding="utf-8") as f:
+                jsonload = json.load(f)
+            for routine in jsonload:
+                routine_date = QDate.fromString(routine['date'], "yyyy-MM-dd")
+                excepts = [QDate.fromString(x, "yyyy-MM-dd") for x in routine.get('except', [])]
+                if is_today_routine(today,routine_date,excepts,routine['rule'],routine.get('days', 1),routine['times']):
+                    routines_today.append(routine['name'])
+        except:
+            pass
+        if not routines_today:
+            self.text_label.setText(random.choice(nonetext))
+        else:
+            text = "你今天的日程有：\n" + "\n".join(f"• {r}" for r in routines_today) + "\n" + random.choice(havetextend)
+            self.text_label.setText(text)
 
 # 创建主窗口
 
 app = QApplication([])
+
+welcome = WelcomeDialog()
+welcome.setGeometry(300,350, 600, 300)
 window = QWidget()
-calendar = CustomCalendarWidget() # 创建自定义日历控件
+
+# 配置主窗口
+calendar = MCalendarWidget() # 创建自定义日历控件
 main_layout = QVBoxLayout()
 top_layout = QHBoxLayout()
 new_button = QPushButton("新建日程")
@@ -743,7 +813,7 @@ title_label = QLabel("MCalendar  .ω.")
 title_label.setFont(QFont("Arial", 24))
 title_label.setStyleSheet('''
                           QLabel{
-                                color: #652607;
+                                color: #7c34a0;
                                 background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #cef3fd, stop:1 #a1e7fb);
                         }''')
 top_layout.addWidget(title_label)
@@ -758,5 +828,17 @@ window.setWindowTitle("MCalendar")
 window.setWindowIcon(QIcon("icon.png"))
 window.setGeometry(100, 100, 1200, 800)
 window.setLayout(main_layout)
+
+# 看板娘
+bg = QLabel(window)
+bg.setPixmap(QPixmap("Meko.png"))
+bg.setScaledContents(True)
+bg.resize(500, 500)
+bgopacity = QGraphicsOpacityEffect()
+bgopacity.setOpacity(0.1)
+bg.setGraphicsEffect(bgopacity)
+bg.setAttribute(Qt.WA_TransparentForMouseEvents)
+
 window.show()
+welcome.exec_()
 app.exec_()
